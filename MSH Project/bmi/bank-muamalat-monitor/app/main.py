@@ -8,8 +8,13 @@ from streamlit_option_menu import option_menu
 import sys
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+# Fix import path for Streamlit Cloud
+# Get the directory where main.py is located
+app_dir = Path(__file__).parent
+# Get the parent directory (repository root)
+root_dir = app_dir.parent
+# Add to path
+sys.path.insert(0, str(root_dir))
 
 from app.config import Config
 from app.utils.logger import setup_logger
@@ -40,6 +45,8 @@ def safe_import_page(page_name):
             return None
     except ImportError as e:
         st.error(f"Error importing {page_name}: {e}")
+        st.error(f"Current path: {sys.path}")
+        st.error(f"Working directory: {Path.cwd()}")
         return None
 
 # Initialize orchestrator safely
@@ -321,6 +328,12 @@ def main():
     except Exception as e:
         st.error(f"Failed to start application: {str(e)}")
         logger.error(f"Application startup error: {str(e)}")
+        
+        # Show debug information
+        st.error("Debug Information:")
+        st.error(f"Python Path: {sys.path}")
+        st.error(f"Current Directory: {Path.cwd()}")
+        st.error(f"File Location: {__file__}")
 
 if __name__ == "__main__":
     main()
