@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any
 # Safe import for components
 try:
     from ui.components.metrics_cards import render_single_metric_card, display_metric_cards
+    from ui.components.charts import create_gauge_chart, create_trend_chart, safe_plotly_chart
 except ImportError:
     # Fallback if components not available
     def render_single_metric_card(name, data, show_chart=False):
@@ -23,6 +24,22 @@ except ImportError:
         for i, (key, value) in enumerate(metrics.items()):
             with cols[i]:
                 render_single_metric_card(key, value)
+    
+    def create_gauge_chart(value, title="Score", threshold=70.0):
+        return None
+    
+    def create_trend_chart(x, y, title="Trend"):
+        return None
+        
+    def safe_plotly_chart(fig, fallback_message="Chart unavailable"):
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info(fallback_message)
+
+def show_overview():
+    """Main function expected by main.py - calls the original render function"""
+    render()
 
 def render(orchestrator: Optional[Any] = None):
     """Render the overview dashboard"""
@@ -115,29 +132,44 @@ def render_health_score_gauge(metrics: Dict[str, Any]):
     """Render overall health score gauge"""
     st.markdown("#### 🏥 Overall Health Score")
     
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=metrics['health_score'],
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': "Bank Health Score"},
-        delta={'reference': 70, 'relative': True},
-        gauge={
-            'axis': {'range': [None, 100]},
-            'bar': {'color': "darkblue"},
-            'steps': [
-                {'range': [0, 33], 'color': "lightgray"},
-                {'range': [33, 67], 'color': "gray"}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': 90
+    try:
+        # Use unified charts module
+        fig = create_gauge_chart(
+            value=metrics['health_score'],
+            title="Bank Health Score",
+            threshold=70.0,
+            min_val=0.0,
+            max_val=100.0,
+            color="darkblue"
+        )
+        
+        safe_plotly_chart(fig, "Health score gauge unavailable")
+        
+    except Exception as e:
+        # Fallback to plotly figure creation
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number+delta",
+            value=metrics['health_score'],
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': "Bank Health Score"},
+            delta={'reference': 70, 'relative': True},
+            gauge={
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 33], 'color': "lightgray"},
+                    {'range': [33, 67], 'color': "gray"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 90
+                }
             }
-        }
-    ))
-    
-    fig.update_layout(height=300)
-    st.plotly_chart(fig, use_container_width=True)
+        ))
+        
+        fig.update_layout(height=300)
+        st.plotly_chart(fig, use_container_width=True)
     
     # Health interpretation
     if metrics['health_score'] < 33:
@@ -191,7 +223,7 @@ def render_performance_trends():
     st.markdown("#### 📈 Performance Trends")
     
     # Mock historical data
-    months = pd.date_range(end=datetime.now(), periods=12, freq='ME')
+    months = pd.date_range(end=datetime.now(), periods=12, freq='M')
     trend_data = pd.DataFrame({
         'Month': months,
         'NPF': np.random.normal(3.5, 0.5, 12).cumsum() / 12 + 2,
@@ -429,6 +461,7 @@ def render_fallback_content():
 
 # Export functions for external use
 __all__ = [
+    'show_overview',  # Main function expected by main.py
     'render',
     'get_current_metrics',
     'render_key_metrics',
@@ -441,3 +474,7 @@ __all__ = [
     'render_decision_summary',
     'render_fallback_content'
 ]
+
+# For backwards compatibility and direct execution
+if __name__ == "__main__":
+    show_overview()

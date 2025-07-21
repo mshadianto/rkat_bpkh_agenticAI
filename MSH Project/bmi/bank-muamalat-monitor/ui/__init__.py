@@ -1,5 +1,7 @@
 """
-UI package for Bank Muamalat Health Monitoring System
+UI Package Initialization
 """
 
-# This file makes the ui directory a Python package
+# Make sure this package can be imported
+__version__ = "1.0.0"
+__author__ = "MS Hadianto | Komite Audit BPKH"
