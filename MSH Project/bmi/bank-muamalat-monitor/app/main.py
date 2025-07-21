@@ -13,16 +13,27 @@ from typing import Dict, List, Optional, Any
 import warnings
 warnings.filterwarnings('ignore')
 
+<<<<<<< HEAD
 # Add current directory to Python path for imports
 current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
+=======
+# Fix import path for Streamlit Cloud
+# Get the directory where main.py is located
+app_dir = Path(__file__).parent
+# Get the parent directory (repository root)
+root_dir = app_dir.parent
+# Add to path
+sys.path.insert(0, str(root_dir))
+>>>>>>> f33ec8f10e82d70baf4c784fe0db6795a679e6df
 
 # Add pages directory to path
 pages_dir = current_dir / "pages"
 if str(pages_dir) not in sys.path:
     sys.path.insert(0, str(pages_dir))
 
+<<<<<<< HEAD
 # Check for live mode dependencies
 try:
     import requests
@@ -31,6 +42,37 @@ try:
     LIVE_MODE_AVAILABLE = True
 except ImportError:
     LIVE_MODE_AVAILABLE = False
+=======
+# Safe imports with proper error handling
+def safe_import_page(page_name):
+    """Safely import page module"""
+    try:
+        if page_name == "overview":
+            from ui.pages import overview
+            return overview
+        elif page_name == "financial_health":
+            from ui.pages import financial_health
+            return financial_health
+        elif page_name == "risk_assessment":
+            from ui.pages import risk_assessment
+            return risk_assessment
+        elif page_name == "compliance_monitoring":
+            from ui.pages import compliance_monitoring
+            return compliance_monitoring
+        elif page_name == "strategic_analysis":
+            from ui.pages import strategic_analysis
+            return strategic_analysis
+        elif page_name == "decision_support":
+            from ui.pages import decision_support
+            return decision_support
+        else:
+            return None
+    except ImportError as e:
+        st.error(f"Error importing {page_name}: {e}")
+        st.error(f"Current path: {sys.path}")
+        st.error(f"Working directory: {Path.cwd()}")
+        return None
+>>>>>>> f33ec8f10e82d70baf4c784fe0db6795a679e6df
 
 # Check for advanced visualization dependencies
 try:
@@ -2709,10 +2751,21 @@ def get_enhanced_loader():
             st.session_state.enhanced_loader = LiveModeMultiPageLoader()
         return st.session_state.enhanced_loader
     except Exception as e:
+<<<<<<< HEAD
         st.error(f"Enhanced loader error: {str(e)}")
         emergency_loader = LiveModeMultiPageLoader()
         emergency_loader._create_emergency_pages()
         return emergency_loader
+=======
+        st.error(f"Failed to start application: {str(e)}")
+        logger.error(f"Application startup error: {str(e)}")
+        
+        # Show debug information
+        st.error("Debug Information:")
+        st.error(f"Python Path: {sys.path}")
+        st.error(f"Current Directory: {Path.cwd()}")
+        st.error(f"File Location: {__file__}")
+>>>>>>> f33ec8f10e82d70baf4c784fe0db6795a679e6df
 
 # ===== ENHANCED LOGIN SYSTEM =====
 def render_enhanced_login_page():
