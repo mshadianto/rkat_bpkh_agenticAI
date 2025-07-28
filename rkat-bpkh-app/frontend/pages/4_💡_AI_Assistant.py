@@ -1,399 +1,324 @@
+# frontend/pages/4_💡_AI_Assistant.py - Fixed version
 import streamlit as st
+import requests
 import pandas as pd
+from datetime import datetime
+import json
 import plotly.express as px
-from utils.api_client import APIClient
-from components.auth import AuthComponent
-from config.settings import settings
+import plotly.graph_objects as go
 
-# Page config
-st.set_page_config(
-    page_title="AI Assistant - RKAT BPKH",
-    page_icon="💡",
-    layout="wide"
-)
+# Configuration
+BACKEND_URL = "https://rkat-bpkh-agenticai.onrender.com"
+REQUEST_TIMEOUT = 30
 
-# Initialize components
-api_client = APIClient(settings.API_BASE_URL)
-auth = AuthComponent(api_client)
-
-# Check authentication
-if not auth.is_authenticated():
-    st.error("Silakan login terlebih dahulu")
-    st.stop()
-
-# Set API token
-api_client.set_auth_token(st.session_state.auth_token)
-
-st.title("💡 AI Assistant untuk RKAT")
-
-# Initialize chat history
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# Tabs for different AI features
-tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat AI", "📊 Scenario Planning", "🎯 Budget Optimization", "📋 Compliance Assistant"])
-
-with tab1:
-    st.subheader("💬 Chat dengan AI Assistant")
+def get_auth_headers():
+    """Get authorization headers with safe session state access"""
+    token = (st.session_state.get('token') or 
+             st.session_state.get('auth_token') or 
+             st.session_state.get('access_token'))
     
-    # Chat interface
-    st.write("Tanyakan apa saja tentang RKAT, anggaran, atau kebijakan BPKH!")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+def make_api_request(method, endpoint, **kwargs):
+    """API request wrapper"""
+    try:
+        url = f"{BACKEND_URL}{endpoint}"
+        kwargs['timeout'] = REQUEST_TIMEOUT
+        
+        if method.upper() == "GET":
+            response = requests.get(url, **kwargs)
+        elif method.upper() == "POST":
+            response = requests.post(url, **kwargs)
+        
+        return response
+    except Exception as e:
+        st.error(f"API Error: {e}")
+        return None
+
+def main():
+    st.title("💡 AI Assistant untuk RKAT")
+    
+    # Check authentication
+    if not st.session_state.get('authenticated', False):
+        st.error("❌ Anda belum login. Silahkan login terlebih dahulu.")
+        st.info("👈 Klik halaman utama untuk login")
+        return
+    
+    # Introduction
+    st.markdown("""
+    ### 🤖 Asisten AI untuk Penyusunan RKAT BPKH
+    
+    AI Assistant akan membantu Anda dalam:
+    - 🔍 **Analisis Kelayakan Anggaran** - Validasi usulan anggaran berdasarkan historical data
+    - 📊 **Validasi Kesesuaian KUP & SBO** - Verifikasi otomatis kesesuaian dengan pedoman
+    - ⏱️ **Prediksi Timeline Approval** - Estimasi waktu persetujuan berdasarkan kompleksitas
+    - 📈 **Benchmarking** - Perbandingan dengan RKAT sejenis di bidang lain
+    - 💡 **Saran Optimasi** - Rekomendasi untuk meningkatkan efisiensi anggaran
+    """)
+    
+    # Navigation tabs
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "💬 Chat AI", 
+        "📊 Scenario Planning", 
+        "🎯 Budget Optimization",
+        "✅ Compliance Assistant"
+    ])
+    
+    with tab1:
+        show_chat_interface()
+    
+    with tab2:
+        show_scenario_planning()
+    
+    with tab3:
+        show_budget_optimization()
+    
+    with tab4:
+        show_compliance_assistant()
+
+def show_chat_interface():
+    """AI Chat interface with RKAT context"""
+    st.subheader("💬 Chat AI")
+    
+    # Load RKAT data for context
+    rkat_context = load_rkat_context()
+    
+    # Chat history
+    if 'ai_chat_history' not in st.session_state:
+        st.session_state.ai_chat_history = [
+            {
+                "role": "assistant", 
+                "content": "Halo! Saya AI Assistant RKAT BPKH. Bagaimana saya dapat membantu Anda dalam penyusunan atau review RKAT hari ini?"
+            }
+        ]
     
     # Display chat history
-    chat_container = st.container()
-    
-    with chat_container:
-        for i, chat in enumerate(st.session_state.chat_history):
-            # User message
-            with st.chat_message("user"):
-                st.write(chat["user"])
-            
-            # AI response
-            with st.chat_message("assistant"):
-                st.write(chat["assistant"])
+    for message in st.session_state.ai_chat_history:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
     
     # Chat input
-    user_query = st.chat_input("Ketik pertanyaan Anda di sini...")
-    
-    if user_query:
-        # Add user message to history
-        with st.chat_message("user"):
-            st.write(user_query)
+    if prompt := st.chat_input("Tanyakan tentang RKAT, KUP, SBO, atau proses approval..."):
+        # Add user message
+        st.session_state.ai_chat_history.append({"role": "user", "content": prompt})
         
-        # Get AI response
+        with st.chat_message("user"):
+            st.write(prompt)
+        
+        # Generate AI response
         with st.chat_message("assistant"):
-            with st.spinner("AI sedang berpikir..."):
-                response = api_client.ai_chat(
-                    query=user_query,
-                    context={
-                        "user_role": auth.get_user_info().get("role"),
-                        "department": auth.get_user_info().get("department")
-                    }
-                )
-                
-                if response["success"]:
-                    ai_response = response["data"]["response"]
-                    st.write(ai_response)
-                    
-                    # Add to chat history
-                    st.session_state.chat_history.append({
-                        "user": user_query,
-                        "assistant": ai_response
-                    })
-                else:
-                    st.error(f"AI Error: {response.get('error', 'Unknown error')}")
+            with st.spinner("AI sedang menganalisis..."):
+                ai_response = generate_ai_response(prompt, rkat_context)
+                st.write(ai_response)
+                st.session_state.ai_chat_history.append({"role": "assistant", "content": ai_response})
     
-    # Clear chat button
-    if st.button("🗑️ Clear Chat History"):
-        st.session_state.chat_history = []
-        st.rerun()
+    # Quick actions
+    st.subheader("🚀 Quick Actions")
+    col1, col2, col3 = st.columns(3)
     
-    # Quick questions
-    st.subheader("❓ Pertanyaan Cepat")
+    with col1:
+        if st.button("📊 Analisis Budget", use_container_width=True):
+            auto_prompt = "Bantu saya menganalisis kelayakan anggaran RKAT saya"
+            st.session_state.ai_chat_history.append({"role": "user", "content": auto_prompt})
+            response = generate_ai_response(auto_prompt, rkat_context)
+            st.session_state.ai_chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
     
-    quick_questions = [
-        "Bagaimana cara menghitung anggaran sesuai SBO?",
-        "Apa saja dokumen yang diperlukan untuk RKAT?",
-        "Bagaimana proses workflow approval RKAT?",
-        "Apa kriteria kepatuhan KUP yang harus dipenuhi?",
-        "Berapa batas maksimal anggaran operasional BPKH?"
-    ]
+    with col2:
+        if st.button("✅ Cek Compliance", use_container_width=True):
+            auto_prompt = "Periksa kesesuaian RKAT saya dengan KUP dan SBO terbaru"
+            st.session_state.ai_chat_history.append({"role": "user", "content": auto_prompt})
+            response = generate_ai_response(auto_prompt, rkat_context)
+            st.session_state.ai_chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
     
-    col1, col2 = st.columns(2)
-    
-    for i, question in enumerate(quick_questions):
-        with (col1 if i % 2 == 0 else col2):
-            if st.button(question, key=f"quick_{i}"):
-                # Simulate clicking the question
-                st.session_state.quick_question = question
-                st.rerun()
+    with col3:
+        if st.button("⏱️ Prediksi Timeline", use_container_width=True):
+            auto_prompt = "Berapa lama estimasi waktu approval untuk RKAT saya?"
+            st.session_state.ai_chat_history.append({"role": "user", "content": auto_prompt})
+            response = generate_ai_response(auto_prompt, rkat_context)
+            st.session_state.ai_chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
 
-with tab2:
+def show_scenario_planning():
+    """Scenario planning and budget analysis"""
     st.subheader("📊 Scenario Planning & Budget Analysis")
     
-    # Scenario planning form
-    with st.form("scenario_form"):
-        st.write("Buat berbagai skenario anggaran untuk analisis dan perencanaan:")
+    st.markdown("Buat berbagai skenario anggaran untuk analisis dan perencanaan:")
+    
+    # Input parameters
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        base_budget = st.number_input(
+            "Anggaran Dasar (Rp)", 
+            min_value=0, 
+            value=1000000000, 
+            step=10000000,
+            format="%d"
+        )
         
-        col1, col2 = st.columns(2)
+        inflation_rate = st.slider(
+            "Tingkat Inflasi (%)", 
+            min_value=0.0, 
+            max_value=10.0, 
+            value=3.50, 
+            step=0.1
+        )
         
-        with col1:
-            base_budget = st.number_input(
-                "Anggaran Dasar (Rp)", 
-                min_value=0.0, 
-                value=1000000000.0,  # 1 Milyar
-                step=100000000.0,
-                format="%.0f"
-            )
-            
-            inflation_rate = st.slider("Tingkat Inflasi (%)", 0.0, 10.0, 3.5)
-            growth_target = st.slider("Target Pertumbuhan (%)", -10.0, 20.0, 5.0)
+        growth_target = st.slider(
+            "Target Pertumbuhan (%)", 
+            min_value=-10.0, 
+            max_value=20.0, 
+            value=5.0, 
+            step=0.5
+        )
+    
+    with col2:
+        num_scenarios = st.number_input(
+            "Jumlah Skenario", 
+            min_value=1, 
+            max_value=10, 
+            value=3,
+            step=1
+        )
         
-        with col2:
-            scenario_count = st.selectbox("Jumlah Skenario", [3, 5, 7])
-            
-            risk_level = st.selectbox(
-                "Tingkat Risiko",
-                ["Conservative", "Moderate", "Aggressive"]
-            )
-            
-            focus_area = st.multiselect(
-                "Area Fokus",
-                ["Operasional", "Teknologi", "SDM", "Infrastruktur", "Program Kemaslahatan"],
-                default=["Operasional"]
-            )
+        risk_level = st.selectbox(
+            "Tingkat Risiko",
+            ["Conservative", "Moderate", "Aggressive"],
+            index=0
+        )
         
-        if st.form_submit_button("🚀 Generate Scenarios", type="primary"):
-            with st.spinner("AI sedang menganalisis dan membuat skenario..."):
-                scenario_response = api_client.scenario_analysis(
-                    base_budget=base_budget,
-                    parameters={
-                        "inflation_rate": inflation_rate,
-                        "growth_target": growth_target,
-                        "risk_level": risk_level,
-                        "focus_areas": focus_area
-                    },
-                    scenario_count=scenario_count
-                )
-                
-                if scenario_response["success"]:
-                    scenarios = scenario_response["data"]["scenarios"]
-                    
-                    st.success("Skenario berhasil dibuat!")
-                    
-                    # Display scenarios
-                    for i, scenario in enumerate(scenarios, 1):
-                        with st.expander(f"Skenario {i}: {scenario.get('name', f'Scenario {i}')}"):
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.metric("Total Budget", f"Rp {scenario.get('total_budget', 0):,.0f}")
-                                st.metric("Operational", f"Rp {scenario.get('operational_budget', 0):,.0f}")
-                                st.metric("Personnel", f"Rp {scenario.get('personnel_budget', 0):,.0f}")
-                            
-                            with col2:
-                                st.write("**Asumsi:**")
-                                for assumption in scenario.get('assumptions', []):
-                                    st.write(f"• {assumption}")
-                                
-                                st.write("**Risiko:**")
-                                for risk in scenario.get('risks', []):
-                                    st.write(f"• {risk}")
-                    
-                    # Comparison chart
-                    if len(scenarios) > 1:
-                        st.subheader("📊 Perbandingan Skenario")
-                        
-                        comparison_data = []
-                        for i, scenario in enumerate(scenarios, 1):
-                            comparison_data.append({
-                                'Scenario': f"Skenario {i}",
-                                'Total Budget': scenario.get('total_budget', 0),
-                                'Operational': scenario.get('operational_budget', 0),
-                                'Personnel': scenario.get('personnel_budget', 0)
-                            })
-                        
-                        df = pd.DataFrame(comparison_data)
-                        
-                        fig = px.bar(
-                            df, 
-                            x='Scenario', 
-                            y=['Total Budget', 'Operational', 'Personnel'],
-                            title="Perbandingan Anggaran per Skenario",
-                            barmode='group'
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                
-                else:
-                    st.error(f"Gagal membuat skenario: {scenario_response.get('error', 'Unknown error')}")
+        focus_area = st.selectbox(
+            "Area Fokus",
+            ["Operasional", "Investasi", "Pengembangan", "Maintenance"],
+            index=0
+        )
+    
+    # Generate scenarios button
+    if st.button("🔬 Generate Scenarios", use_container_width=True):
+        scenarios = generate_budget_scenarios(
+            base_budget, inflation_rate, growth_target, 
+            num_scenarios, risk_level, focus_area
+        )
+        
+        # Display scenarios
+        st.subheader("📈 Hasil Analisis Skenario")
+        
+        # Create DataFrame for display
+        scenario_df = pd.DataFrame(scenarios)
+        st.dataframe(scenario_df, use_container_width=True)
+        
+        # Visualization
+        fig = px.bar(
+            scenario_df, 
+            x='Scenario', 
+            y='Budget_Amount',
+            color='Risk_Level',
+            title="Perbandingan Skenario Anggaran",
+            labels={'Budget_Amount': 'Anggaran (Rp)', 'Scenario': 'Skenario'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Recommendations
+        st.subheader("💡 Rekomendasi AI")
+        show_scenario_recommendations(scenarios, risk_level)
 
-with tab3:
+def show_budget_optimization():
+    """Budget optimization tools"""
     st.subheader("🎯 Budget Optimization")
     
-    # Get user's RKATs for optimization
-    rkat_response = api_client.get_rkat_list()
+    # Load RKAT data
+    rkat_list = load_rkat_data()
     
-    if rkat_response["success"] and rkat_response["data"]:
-        rkat_list = rkat_response["data"]
-        
-        # Select RKAT to optimize
-        selected_rkat = st.selectbox(
-            "Pilih RKAT untuk Optimasi",
-            options=[r["id"] for r in rkat_list],
-            format_func=lambda x: next(r["title"] for r in rkat_list if r["id"] == x)
-        )
-        
-        if selected_rkat:
-            # Optimization goals
-            st.subheader("Tujuan Optimasi")
+    if rkat_list:
+        # FIXED: Safe key access untuk selectbox
+        try:
+            # Process RKAT list dengan safe key mapping
+            processed_rkat = []
+            for rkat in rkat_list:
+                processed_item = {
+                    'id': rkat.get('id', 'N/A'),
+                    'title': rkat.get('judul', rkat.get('title', 'No Title')),  # FIXED: Map judul -> title
+                    'budget': rkat.get('total_anggaran', 0),
+                    'bidang': rkat.get('bidang', 'N/A')
+                }
+                processed_rkat.append(processed_item)
             
-            optimization_goals = st.multiselect(
-                "Pilih tujuan optimasi:",
-                [
-                    "Minimize Total Cost",
-                    "Maximize Efficiency", 
-                    "Improve Compliance",
-                    "Balance Budget Allocation",
-                    "Reduce Operational Overhead",
-                    "Enhance Performance Metrics"
-                ],
-                default=["Minimize Total Cost", "Improve Compliance"]
-            )
-            
-            if st.button("🎯 Optimize Budget", type="primary"):
-                with st.spinner("AI sedang mengoptimalkan anggaran..."):
-                    optimization_response = api_client.ai_chat(
-                        query=f"Optimize budget for RKAT ID {selected_rkat} with goals: {', '.join(optimization_goals)}",
-                        context={
-                            "optimization_request": True,
-                            "rkat_id": selected_rkat,
-                            "goals": optimization_goals
-                        }
+            if processed_rkat:
+                # FIXED: Selectbox dengan safe format function
+                selected_rkat_id = st.selectbox(
+                    "Pilih RKAT untuk optimasi:",
+                    options=[r["id"] for r in processed_rkat],
+                    format_func=lambda x: next(
+                        (r["title"] for r in processed_rkat if r["id"] == x), 
+                        "Unknown RKAT"  # Fallback value
+                    )
+                )
+                
+                if selected_rkat_id:
+                    selected_rkat = next(
+                        (r for r in processed_rkat if r["id"] == selected_rkat_id), 
+                        None
                     )
                     
-                    if optimization_response["success"]:
-                        optimization_result = optimization_response["data"]["response"]
+                    if selected_rkat:
+                        st.write(f"**RKAT Terpilih:** {selected_rkat['title']}")
+                        st.write(f"**Anggaran Saat Ini:** Rp {selected_rkat['budget']:,.0f}")
                         
-                        st.success("Optimasi selesai!")
-                        st.write(optimization_result)
+                        # Optimization parameters
+                        col1, col2 = st.columns(2)
                         
-                        # Display optimization suggestions
-                        st.subheader("💡 Rekomendasi Optimasi")
-                        st.info("Hasil optimasi AI akan menampilkan saran spesifik untuk perbaikan anggaran Anda.")
-                    
-                    else:
-                        st.error(f"Gagal melakukan optimasi: {optimization_response.get('error', 'Unknown error')}")
+                        with col1:
+                            optimization_target = st.selectbox(
+                                "Target Optimasi:",
+                                ["Efisiensi Biaya", "Maksimalkan Output", "Balance Cost-Benefit"]
+                            )
+                            
+                            reduction_percentage = st.slider(
+                                "Target Pengurangan Biaya (%)",
+                                min_value=0,
+                                max_value=30,
+                                value=10,
+                                step=1
+                            )
+                        
+                        with col2:
+                            priority_areas = st.multiselect(
+                                "Area Prioritas:",
+                                ["Personil", "Operasional", "Teknologi", "Training", "Equipment"],
+                                default=["Operasional"]
+                            )
+                        
+                        # Run optimization
+                        if st.button("⚡ Optimize Budget", use_container_width=True):
+                            optimization_results = run_budget_optimization(
+                                selected_rkat, optimization_target, 
+                                reduction_percentage, priority_areas
+                            )
+                            
+                            st.subheader("📊 Hasil Optimasi")
+                            display_optimization_results(optimization_results)
+            
+            else:
+                st.info("📝 Tidak ada RKAT yang tersedia untuk optimasi")
+                show_sample_optimization()
+                
+        except Exception as e:
+            st.error(f"Error loading RKAT data: {e}")
+            show_sample_optimization()
     
     else:
-        st.info("Tidak ada RKAT tersedia untuk optimasi. Buat RKAT terlebih dahulu.")
+        st.info("📝 Tidak ada data RKAT. Menampilkan contoh optimasi:")
+        show_sample_optimization()
 
-with tab4:
-    st.subheader("📋 Compliance Assistant")
+def show_compliance_assistant():
+    """Compliance checking assistant"""
+    st.subheader("✅ Compliance Assistant")
     
-    # Get user's RKATs for compliance check
-    rkat_response = api_client.get_rkat_list()
+    st.markdown("""
+    ### 📋 Pemeriksaan Kesesuaian RKAT
     
-    if rkat_response["success"] and rkat_response["data"]:
-        rkat_list = rkat_response["data"]
-        
-        # Select RKAT for compliance analysis
-        selected_rkat = st.selectbox(
-            "Pilih RKAT untuk Analisis Kepatuhan",
-            options=[r["id"] for r in rkat_list],
-            format_func=lambda x: next(r["title"] for r in rkat_list if r["id"] == x),
-            key="compliance_rkat"
-        )
-        
-        if selected_rkat:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("🔍 Analisis Kepatuhan KUP", use_container_width=True):
-                    with st.spinner("Menganalisis kepatuhan KUP..."):
-                        response = api_client.ai_chat(
-                            query=f"Analyze KUP compliance for RKAT ID {selected_rkat}",
-                            context={"compliance_type": "KUP", "rkat_id": selected_rkat}
-                        )
-                        
-                        if response["success"]:
-                            st.success("Analisis KUP selesai!")
-                            st.write(response["data"]["response"])
-            
-            with col2:
-                if st.button("🔍 Analisis Kepatuhan SBO", use_container_width=True):
-                    with st.spinner("Menganalisis kepatuhan SBO..."):
-                        response = api_client.ai_chat(
-                            query=f"Analyze SBO compliance for RKAT ID {selected_rkat}",
-                            context={"compliance_type": "SBO", "rkat_id": selected_rkat}
-                        )
-                        
-                        if response["success"]:
-                            st.success("Analisis SBO selesai!")
-                            st.write(response["data"]["response"])
-            
-            # Comprehensive compliance check
-            st.subheader("🏆 Comprehensive Compliance Check")
-            
-            if st.button("📊 Check Full Compliance", type="primary", use_container_width=True):
-                with st.spinner("Melakukan pemeriksaan kepatuhan lengkap..."):
-                    compliance_response = api_client.check_compliance(selected_rkat)
-                    
-                    if compliance_response["success"]:
-                        compliance_data = compliance_response["data"]
-                        
-                        # KUP Compliance Detail
-                        st.subheader("📋 Kepatuhan KUP")
-                        kup_data = compliance_data["kup_compliance"]
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            score = kup_data["compliance_percentage"]
-                            st.metric("Skor KUP", f"{score:.1f}%")
-                            st.progress(score / 100)
-                        
-                        with col2:
-                            level = kup_data["compliance_level"]
-                            st.metric("Level Kepatuhan", level)
-                        
-                        # Detailed checks
-                        st.write("**Detail Pemeriksaan:**")
-                        for check in kup_data.get("checks", []):
-                            status_icon = "✅" if check["status"] == "PASS" else "⚠️" if check["status"] == "PARTIAL" else "❌"
-                            st.write(f"{status_icon} {check['check']}: {check['message']}")
-                        
-                        # Recommendations
-                        recommendations = kup_data.get("recommendations", [])
-                        if recommendations:
-                            st.write("**Rekomendasi:**")
-                            for rec in recommendations:
-                                st.write(f"• {rec}")
-                        
-                        # SBO Compliance
-                        st.subheader("💰 Kepatuhan SBO")
-                        sbo_data = compliance_data["sbo_compliance"]
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            sbo_score = sbo_data["score"]
-                            st.metric("Skor SBO", f"{sbo_score:.1f}%")
-                            st.progress(sbo_score / 100)
-                        
-                        with col2:
-                            sbo_level = sbo_data["level"]
-                            st.metric("Level Kepatuhan", sbo_level)
-                    
-                    else:
-                        st.error(f"Gagal memeriksa kepatuhan: {compliance_response.get('error', 'Unknown error')}")
-    
-    else:
-        st.info("Tidak ada RKAT tersedia untuk analisis kepatuhan.")
-    
-    # Compliance Tips
-    st.subheader("💡 Tips Kepatuhan")
-    
-    with st.expander("📖 Panduan KUP (Kebijakan Umum Penganggaran)"):
-        st.write("""
-        **Pastikan RKAT Anda memenuhi kriteria KUP:**
-        
-        1. **Tema 2026**: Institutional Strengthening
-        2. **Sasaran Strategis**:
-           - Pengembangan investasi pada ekosistem haji dan umroh
-           - Amandemen peraturan untuk penguatan kelembagaan dan tata kelola BPKH
-        3. **Prinsip Anggaran**: Efisien, efektif, rasional, dan akuntabel
-        4. **Dokumen Lengkap**: KAK, RAB, Action Plan, Timeline, WBS
-        5. **Efisiensi**: Hindari duplikasi kegiatan, optimalisasi ruang meeting, dll.
-        """)
-    
-    with st.expander("💰 Panduan SBO (Standar Biaya Operasional)"):
-        st.write("""
-        **Pastikan anggaran sesuai dengan SBO 2026:**
-        
-        1. **Honorarium**: Sesuai eselon dan golongan
-        2. **Meeting Package**: Fullday (Rp 635.000) vs Halfday (Rp 450.000)
-        3. **Konsumsi Rapat**: Rp 125.000 per orang
-        4. **ATK**: Rp 5.000.000 per paket
-        5. **Dokumentasi**: Rp 20.000.000 untuk foto/video
-        6. **Variance**: Maksimal 10% dari standar SBO
-        """)
+    Assistant akan membantu memverifikasi kesesuaian RKA
