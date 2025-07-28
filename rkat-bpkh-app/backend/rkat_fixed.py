@@ -1,426 +1,372 @@
-# app.py - Streamlit Frontend dengan koneksi yang diperbaiki
-import streamlit as st
-import requests
-import pandas as pd
-from datetime import datetime
+# rkat_fixed.py - Clean backend tanpa streamlit imports
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
+from enum import Enum
+import uuid
 import json
-import time
+import os
 
-# Configuration - Update sesuai environment
-if st.secrets.get("environment") == "production":
-    API_BASE_URL = "https://your-backend-url.herokuapp.com"  # Ganti dengan URL production
-else:
-    API_BASE_URL = "http://localhost:8000"  # Local development
+# Initialize FastAPI app
+app = FastAPI(
+    title="RKAT BPKH API",
+    description="Sistem Rencana Kerja dan Anggaran Tahunan - Badan Pengelola Keuangan Haji",
+    version="2.0.0"
+)
 
-# Timeout untuk requests
-REQUEST_TIMEOUT = 10
+# CORS Configuration - CRITICAL untuk Streamlit Cloud
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://rkat-bpkh-mshadianto.streamlit.app",
+        "http://localhost:8501",
+        "*"  # Allow all for development
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def test_backend_connection():
-    """Test koneksi ke backend"""
-    try:
-        response = requests.get(f"{API_BASE_URL}/", timeout=REQUEST_TIMEOUT)
-        return True
-    except requests.exceptions.RequestException as e:
-        st.error(f"Backend tidak dapat diakses: {str(e)}")
-        st.info(f"Pastikan backend berjalan di: {API_BASE_URL}")
-        return False
+# Security
+security = HTTPBearer()
 
-def make_api_request(method, endpoint, **kwargs):
-    """Wrapper untuk semua API requests dengan error handling"""
-    try:
-        url = f"{API_BASE_URL}{endpoint}"
-        kwargs['timeout'] = REQUEST_TIMEOUT
-        
-        if method.upper() == "GET":
-            response = requests.get(url, **kwargs)
-        elif method.upper() == "POST":
-            response = requests.post(url, **kwargs)
-        elif method.upper() == "PUT":
-            response = requests.put(url, **kwargs)
-        elif method.upper() == "DELETE":
-            response = requests.delete(url, **kwargs)
-        
-        return response
-    except requests.exceptions.ConnectionError:
-        st.error("❌ Tidak dapat terhubung ke server. Pastikan backend berjalan.")
-        return None
-    except requests.exceptions.Timeout:
-        st.error("⏱️ Request timeout. Server tidak merespons.")
-        return None
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Error: {str(e)}")
-        return None
+# Enums for Status
+class RKATStatus(str, Enum):
+    DRAFT = "draft"
+    PENDING_AUDIT_REVIEW = "pending_audit_review"
+    AUDIT_REVIEWED = "audit_reviewed"
+    PENDING_KOMITE_REVIEW = "pending_komite_review"
+    KOMITE_REVIEWED = "komite_reviewed"
+    PENDING_DEWAN_APPROVAL = "pending_dewan_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVISION_NEEDED = "revision_needed"
 
-def main():
-    st.set_page_config(
-        page_title="RKAT BPKH",
-        page_icon="🏛️",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Check backend connection first
-    if not test_backend_connection():
-        st.markdown("""
-        ### 🔧 Troubleshooting
-        
-        **Backend tidak berjalan. Ikuti langkah berikut:**
-        
-        1. **Jalankan Backend:**
-           ```bash
-           cd backend
-           uvicorn minimal_backend:app --reload --port 8000
-           ```
-        
-        2. **Pastikan Port 8000 tidak digunakan:**
-           ```bash
-           lsof -i :8000  # Check port usage
-           ```
-        
-        3. **Install Dependencies:**
-           ```bash
-           pip install fastapi uvicorn python-multipart
-           ```
-        
-        4. **Test Manual:**
-           Buka http://localhost:8000 di browser
-        """)
-        return
-    
-    # Authentication
-    if 'user' not in st.session_state:
-        login_page()
-    else:
-        main_app()
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    BIDANG_PENGAJU = "bidang_pengaju"
+    AUDIT_INTERNAL = "audit_internal"
+    KOMITE_DEWAN_PENGAWAS = "komite_dewan_pengawas"
+    DEWAN_PENGAWAS = "dewan_pengawas"
 
-def login_page():
-    st.markdown("""
-    <div style="text-align: center;">
-        <h1>🏛️ Sistem RKAT BPKH</h1>
-        <h3>Login ke Sistem</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        with st.form("login_form"):
-            username = st.text_input("Username", value="", placeholder="Masukkan username")
-            password = st.text_input("Password", type="password", placeholder="Masukkan password")
-            
-            submitted = st.form_submit_button("Login", use_container_width=True)
-            
-            if submitted:
-                if not username or not password:
-                    st.error("Username dan password harus diisi")
-                    return
-                
-                with st.spinner("Memverifikasi login..."):
-                    response = make_api_request("POST", "/auth/login", 
-                                              json={"username": username, "password": password})
-                    
-                    if response and response.status_code == 200:
-                        data = response.json()
-                        st.session_state['user'] = data['user']
-                        st.session_state['token'] = data['access_token']
-                        st.success("Login berhasil!")
-                        time.sleep(1)
-                        st.rerun()
-                    elif response and response.status_code == 401:
-                        st.error("Username atau password salah")
-                    else:
-                        st.error("Gagal login. Silahkan coba lagi.")
-        
-        # Demo credentials
-        with st.expander("🔑 Demo Credentials"):
-            st.markdown("""
-            **Available Users:**
-            - **Admin**: `admin123` / `admin123`
-            - **Audit Internal**: `audit123` / `audit123` 
-            - **Komite Dewan**: `komite123` / `komite123`
-            - **Dewan Pengawas**: `dewan123` / `dewan123`
-            - **Bidang TI**: `bidang_ti` / `ti123`
-            """)
+# Data Models
+class User(BaseModel):
+    id: str
+    username: str
+    name: str
+    email: str
+    role: UserRole
+    bidang: Optional[str] = None
+    permissions: List[str]
 
-def main_app():
-    # Sidebar Navigation
-    with st.sidebar:
-        st.markdown("""
-        <div style="text-align: center; padding: 10px;">
-            <h2>🏛️ BPKH</h2>
-            <p>Sistem RKAT</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # User info
-        user = st.session_state['user']
-        st.markdown(f"""
-        **👤 {user['name']}**  
-        📋 Role: {user['role']}  
-        🏢 Bidang: {user.get('bidang', 'N/A')}
-        """)
-        
-        st.divider()
-        
-        # Navigation
-        pages = {
-            "📊 Dashboard": "dashboard",
-            "📋 RKAT Management": "rkat", 
-            "🔄 Workflow": "workflow",
-            "🤖 AI Assistant": "ai"
-        }
-        
-        selected = st.radio("Navigation", list(pages.keys()), key="nav_radio")
-        page = pages[selected]
-        
-        st.divider()
-        
-        if st.button("🚪 Logout", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-    
-    # Main Content
-    if page == "dashboard":
-        dashboard_page()
-    elif page == "rkat":
-        rkat_management_page()
-    elif page == "workflow":
-        workflow_page()
-    elif page == "ai":
-        ai_assistant_page()
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-def get_auth_headers():
-    """Get authorization headers"""
-    if 'token' in st.session_state:
-        return {"Authorization": f"Bearer {st.session_state['token']}"}
-    return {}
+class Comment(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    user_name: str
+    message: str
+    created_at: datetime = Field(default_factory=datetime.now)
 
-def dashboard_page():
-    st.title("📊 Dashboard RKAT BPKH")
-    
-    # Test API connection
-    with st.spinner("Loading dashboard data..."):
-        response = make_api_request("GET", "/dashboard/metrics", headers=get_auth_headers())
-        
-        if response and response.status_code == 200:
-            metrics = response.json()
-            
-            # Display metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total RKAT", metrics.get('total_rkat', 0))
-            with col2:
-                st.metric("RKAT Disetujui", metrics.get('approved_rkat', 0))
-            with col3:
-                budget = metrics.get('total_budget', 0)
-                st.metric("Total Anggaran", f"Rp {budget/1000000000:.1f}B")
-            with col4:
-                avg_days = metrics.get('avg_approval_days', 0)
-                st.metric("Rata-rata Approval", f"{avg_days:.1f} hari")
-            
-            # Status distribution
-            st.subheader("📈 Distribusi Status RKAT")
-            status_dist = metrics.get('status_distribution', {})
-            
-            if status_dist:
-                df = pd.DataFrame(list(status_dist.items()), columns=['Status', 'Count'])
-                df = df[df['Count'] > 0]  # Only show non-zero counts
-                
-                if not df.empty:
-                    st.bar_chart(df.set_index('Status'))
-                else:
-                    st.info("Belum ada data RKAT")
-            else:
-                st.info("Belum ada data untuk ditampilkan")
-                
-        else:
-            st.error("Gagal memuat data dashboard")
-            # Show mock data for demo
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total RKAT", 24)
-            with col2:
-                st.metric("RKAT Disetujui", 14)
-            with col3:
-                st.metric("Total Anggaran", "Rp 25.0B")
-            with col4:
-                st.metric("Rata-rata Approval", "5.8 hari")
+class RKAT(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    judul: str
+    bidang: str
+    divisi: str
+    program: str
+    pengaju_id: str
+    pengaju_name: str
+    tahun_anggaran: int
+    tanggal_pengajuan: datetime = Field(default_factory=datetime.now)
+    tanggal_update: datetime = Field(default_factory=datetime.now)
+    total_anggaran: float
+    latar_belakang: str
+    tujuan: str
+    sasaran: str
+    kup_references: List[str]
+    sbo_references: List[str]
+    status: RKATStatus = RKATStatus.DRAFT
+    progress_percentage: int = 0
+    comments: List[Comment] = []
 
-def rkat_management_page():
-    st.title("📋 Manajemen RKAT")
-    
-    # Filter controls
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        search_term = st.text_input("🔍 Cari RKAT", placeholder="Masukkan kata kunci...")
-    with col2:
-        status_filter = st.selectbox("Status", ["Semua", "Draft", "Pending Review", "Approved"])
-    with col3:
-        bidang_filter = st.selectbox("Bidang", ["Semua", "Audit Internal", "Teknologi Informasi", "Akuntansi"])
-    
-    # Create new RKAT button
-    if st.button("➕ Buat RKAT Baru", use_container_width=True):
-        st.info("Fitur pembuatan RKAT baru akan segera tersedia")
-    
-    # RKAT List
-    with st.spinner("Loading RKAT data..."):
-        response = make_api_request("GET", "/rkat/", headers=get_auth_headers())
-        
-        if response and response.status_code == 200:
-            rkat_list = response.json()
-            
-            if rkat_list:
-                df = pd.DataFrame(rkat_list)
-                
-                # Apply filters
-                if search_term:
-                    mask = df['judul'].str.contains(search_term, case=False, na=False)
-                    df = df[mask]
-                
-                # Display table
-                st.dataframe(
-                    df[['id', 'judul', 'bidang', 'status', 'total_anggaran', 'progress_percentage']],
-                    use_container_width=True,
-                    column_config={
-                        "id": "ID RKAT",
-                        "judul": "Judul",
-                        "bidang": "Bidang",
-                        "status": "Status",
-                        "total_anggaran": st.column_config.NumberColumn(
-                            "Total Anggaran",
-                            format="Rp%.0f"
-                        ),
-                        "progress_percentage": st.column_config.ProgressColumn(
-                            "Progress",
-                            min_value=0,
-                            max_value=100
-                        )
-                    }
-                )
-            else:
-                st.info("📝 Belum ada RKAT yang dibuat")
-                
-        else:
-            st.error("Gagal memuat data RKAT")
+# In-Memory Database
+USERS_DB = {
+    "admin123": {
+        "id": "user_001",
+        "username": "admin123",
+        "password": "admin123",
+        "name": "Administrator BPKH",
+        "email": "admin@bpkh.go.id",
+        "role": UserRole.ADMIN,
+        "bidang": "Administrasi",
+        "permissions": ["create_rkat", "edit_rkat", "approve_rkat", "view_all", "manage_users"]
+    },
+    "audit123": {
+        "id": "user_002",
+        "username": "audit123",
+        "password": "audit123",
+        "name": "Tim Audit Internal",
+        "email": "audit@bpkh.go.id",
+        "role": UserRole.AUDIT_INTERNAL,
+        "bidang": "Audit Internal",
+        "permissions": ["review_rkat", "view_assigned", "comment_rkat"]
+    },
+    "komite123": {
+        "id": "user_003",
+        "username": "komite123",
+        "password": "komite123",
+        "name": "Komite Dewan Pengawas",
+        "email": "komite@bpkh.go.id",
+        "role": UserRole.KOMITE_DEWAN_PENGAWAS,
+        "bidang": "Dewan Pengawas",
+        "permissions": ["review_rkat", "view_assigned", "comment_rkat"]
+    },
+    "dewan123": {
+        "id": "user_004",
+        "username": "dewan123",
+        "password": "dewan123",
+        "name": "Dewan Pengawas",
+        "email": "dewan@bpkh.go.id",
+        "role": UserRole.DEWAN_PENGAWAS,
+        "bidang": "Dewan Pengawas",
+        "permissions": ["approve_rkat", "view_all", "final_approval"]
+    },
+    "bidang_ti": {
+        "id": "user_005",
+        "username": "bidang_ti",
+        "password": "ti123",
+        "name": "Emir Rio Krishna",
+        "email": "ti@bpkh.go.id",
+        "role": UserRole.BIDANG_PENGAJU,
+        "bidang": "Teknologi Informasi",
+        "permissions": ["create_rkat", "edit_own_rkat", "view_own"]
+    }
+}
 
-def workflow_page():
-    st.title("🔄 Workflow RKAT BPKH")
-    
-    st.markdown("""
-    ### Alur Persetujuan RKAT
-    
-    Sistem RKAT BPKH mengikuti alur persetujuan 4 tahap sesuai dengan struktur organisasi dan tata kelola BPKH.
-    """)
-    
-    # Workflow steps
-    steps = [
-        {
-            "step": 1, 
-            "title": "📝 Pengajuan RKAT", 
-            "desc": "Bidang mengajukan RKAT sesuai KUP & SBO",
-            "roles": "Bidang Pengaju",
-            "duration": "1-3 hari"
-        },
-        {
-            "step": 2, 
-            "title": "🔍 Review Audit Internal", 
-            "desc": "Audit Internal melakukan review kelayakan dan kesesuaian",
-            "roles": "Tim Audit Internal",
-            "duration": "5-7 hari"
-        },
-        {
-            "step": 3, 
-            "title": "📋 Review Komite Dewan", 
-            "desc": "Komite Dewan Pengawas melakukan evaluasi strategis",
-            "roles": "Komite Dewan Pengawas",
-            "duration": "3-5 hari"
-        },
-        {
-            "step": 4, 
-            "title": "✅ Persetujuan Dewan", 
-            "desc": "Dewan Pengawas memberikan persetujuan final",
-            "roles": "Dewan Pengawas",
-            "duration": "2-3 hari"
-        }
-    ]
-    
-    for step in steps:
-        with st.expander(f"Step {step['step']}: {step['title']}", expanded=True):
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.write(f"**Deskripsi:** {step['desc']}")
-                st.write(f"**Penanggung Jawab:** {step['roles']}")
-                st.write(f"**Estimasi Waktu:** {step['duration']}")
-            
-            with col2:
-                st.markdown(f"""
-                <div style="
-                    background: linear-gradient(45deg, #ff6b6b, #feca57);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    text-align: center;
-                    font-size: 24px;
-                    font-weight: bold;
-                ">
-                    Step {step['step']}
-                </div>
-                """, unsafe_allow_html=True)
+# Sample RKAT Data
+RKAT_DB = {}
 
-def ai_assistant_page():
-    st.title("🤖 AI Assistant RKAT")
-    
-    st.markdown("""
-    ### Bantuan Penyusunan RKAT
-    
-    AI Assistant akan membantu Anda dalam:
-    """)
-    
-    features = [
-        "🔍 **Analisis Kelayakan Anggaran** - Validasi usulan anggaran berdasarkan historical data",
-        "📊 **Validasi Kesesuaian KUP & SBO** - Verifikasi otomatis kesesuaian dengan pedoman",
-        "⏱️ **Prediksi Timeline Approval** - Estimasi waktu persetujuan berdasarkan kompleksitas",
-        "📈 **Benchmarking** - Perbandingan dengan RKAT sejenis di bidang lain",
-        "💡 **Saran Optimasi** - Rekomendasi untuk meningkatkan efisiensi anggaran"
-    ]
-    
-    for feature in features:
-        st.markdown(feature)
-    
-    st.divider()
-    
-    # Chat interface
-    st.subheader("💬 Chat dengan AI Assistant")
-    
-    # Chat history
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = [
-            {"role": "assistant", "content": "Halo! Saya AI Assistant RKAT BPKH. Bagaimana saya dapat membantu Anda hari ini?"}
+# Helper Functions
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+    """Mock authentication - replace with real JWT validation"""
+    # For demo purposes, return admin user
+    user_data = USERS_DB["admin123"]
+    return User(**user_data)
+
+def calculate_progress(rkat: RKAT) -> int:
+    """Calculate progress percentage based on status"""
+    progress_map = {
+        RKATStatus.DRAFT: 0,
+        RKATStatus.PENDING_AUDIT_REVIEW: 10,
+        RKATStatus.AUDIT_REVIEWED: 30,
+        RKATStatus.PENDING_KOMITE_REVIEW: 50,
+        RKATStatus.KOMITE_REVIEWED: 70,
+        RKATStatus.PENDING_DEWAN_APPROVAL: 85,
+        RKATStatus.APPROVED: 100,
+        RKATStatus.REJECTED: 0,
+        RKATStatus.REVISION_NEEDED: 25
+    }
+    return progress_map.get(rkat.status, 0)
+
+# API Endpoints
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "RKAT BPKH API - Fixed Backend", 
+        "version": "2.0.0",
+        "status": "running",
+        "backend_file": "rkat_fixed.py",
+        "environment": os.getenv("ENVIRONMENT", "production"),
+        "timestamp": datetime.now().isoformat(),
+        "endpoints": [
+            "/health",
+            "/auth/login", 
+            "/dashboard/metrics",
+            "/rkat/",
+            "/workflow/steps",
+            "/references/kup",
+            "/references/sbo"
         ]
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "backend": "rkat_fixed.py (cleaned)",
+        "timestamp": datetime.now().isoformat(),
+        "database": "in-memory",
+        "users_count": len(USERS_DB),
+        "rkat_count": len(RKAT_DB)
+    }
+
+@app.post("/auth/login")
+async def login(request: LoginRequest):
+    """User authentication"""
+    user_data = USERS_DB.get(request.username)
+    if not user_data or user_data["password"] != request.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
     
-    # Display chat history
-    for message in st.session_state.chat_history:
-        if message["role"] == "user":
-            st.markdown(f"**👤 Anda:** {message['content']}")
-        else:
-            st.markdown(f"**🤖 AI:** {message['content']}")
+    # Remove password from response
+    user_response = {k: v for k, v in user_data.items() if k != "password"}
     
-    # Chat input
-    user_input = st.text_input("Tanyakan tentang RKAT, KUP, SBO, atau proses approval...", key="chat_input")
+    return {
+        "access_token": f"mock_token_{request.username}",
+        "token_type": "bearer",
+        "user": user_response
+    }
+
+@app.get("/dashboard/metrics")
+async def get_dashboard_metrics():
+    """Get dashboard metrics"""
+    # Add some sample data if empty
+    if not RKAT_DB:
+        sample_rkat = {
+            "id": "RKAT-2026-001",
+            "judul": "RKAT Audit Internal 2026",
+            "bidang": "Audit Internal",
+            "status": "pending_audit_review",
+            "total_anggaran": 2500000000,
+            "progress_percentage": 25
+        }
+        RKAT_DB["RKAT-2026-001"] = sample_rkat
+        
+        sample_rkat2 = {
+            "id": "RKAT-2026-002",
+            "judul": "RKAT Teknologi Informasi 2026", 
+            "bidang": "Teknologi Informasi",
+            "status": "approved",
+            "total_anggaran": 5000000000,
+            "progress_percentage": 100
+        }
+        RKAT_DB["RKAT-2026-002"] = sample_rkat2
     
-    if st.button("Kirim", use_container_width=True):
-        if user_input:
-            # Add user message
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            
-            # Simple AI response (replace with actual AI integration)
-            ai_response = f"Terima kasih atas pertanyaan Anda tentang '{user_input}'. Fitur AI Assistant sedang dalam pengembangan dan akan segera tersedia dengan kemampuan analisis yang lebih canggih."
-            
-            st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-            st.rerun()
+    total_rkat = len(RKAT_DB)
+    approved_rkat = len([r for r in RKAT_DB.values() if r.get("status") == "approved"])
+    total_budget = sum(r.get("total_anggaran", 0) for r in RKAT_DB.values())
+    
+    # Status distribution
+    status_distribution = {}
+    for rkat in RKAT_DB.values():
+        status = rkat.get("status", "draft")
+        status_distribution[status] = status_distribution.get(status, 0) + 1
+    
+    return {
+        "total_rkat": total_rkat,
+        "approved_rkat": approved_rkat,
+        "total_budget": total_budget,
+        "avg_approval_days": 5.8,
+        "status_distribution": status_distribution
+    }
+
+@app.get("/rkat/")
+async def get_rkat_list():
+    """Get list of RKAT"""
+    return list(RKAT_DB.values())
+
+@app.get("/rkat/{rkat_id}")
+async def get_rkat_detail(rkat_id: str):
+    """Get RKAT detail"""
+    if rkat_id not in RKAT_DB:
+        raise HTTPException(status_code=404, detail="RKAT not found")
+    return RKAT_DB[rkat_id]
+
+@app.get("/workflow/steps")
+async def get_workflow_steps():
+    """Get workflow steps information"""
+    return [
+        {
+            "step": 1,
+            "title": "Pengajuan RKAT",
+            "description": "Bidang mengajukan RKAT sesuai KUP & SBO",
+            "roles": ["bidang_pengaju"],
+            "actions": ["create", "submit"]
+        },
+        {
+            "step": 2,
+            "title": "Review Audit Internal",
+            "description": "Audit Internal melakukan review kelayakan",
+            "roles": ["audit_internal"],
+            "actions": ["review", "approve", "reject", "request_revision"]
+        },
+        {
+            "step": 3,
+            "title": "Review Komite Dewan",
+            "description": "Komite Dewan Pengawas melakukan evaluasi",
+            "roles": ["komite_dewan_pengawas"],
+            "actions": ["review", "approve", "reject", "request_revision"]
+        },
+        {
+            "step": 4,
+            "title": "Persetujuan Dewan",
+            "description": "Dewan Pengawas memberikan persetujuan final",
+            "roles": ["dewan_pengawas"],
+            "actions": ["approve", "reject"]
+        }
+    ]
+
+@app.get("/references/kup")
+async def get_kup_references():
+    """Get KUP references"""
+    return [
+        {
+            "kup_id": "KUP-AI-2026",
+            "title": "Kebijakan Umum Audit Internal 2026",
+            "description": "Pedoman penganggaran untuk kegiatan audit internal dan tata kelola",
+            "budget_limit": 5000000000,
+            "validity_period": "2026"
+        },
+        {
+            "kup_id": "KUP-TI-2026", 
+            "title": "Kebijakan Umum Teknologi Informasi 2026",
+            "description": "Pedoman penganggaran untuk transformasi digital dan IT",
+            "budget_limit": 10000000000,
+            "validity_period": "2026"
+        }
+    ]
+
+@app.get("/references/sbo")
+async def get_sbo_references():
+    """Get SBO references"""
+    return [
+        {
+            "sbo_id": "SBO-CORP-001",
+            "category": "Audit & Corporate Governance",
+            "standard_cost": 50000000,
+            "unit": "per kegiatan",
+            "description": "Standar biaya untuk kegiatan audit dan tata kelola perusahaan"
+        },
+        {
+            "sbo_id": "SBO-TECH-002",
+            "category": "Technology Development",
+            "standard_cost": 200000000,
+            "unit": "per sistem",
+            "description": "Standar biaya pengembangan sistem dan aplikasi"
+        }
+    ]
+
+@app.get("/users/me")
+async def get_current_user_info():
+    """Get current user information"""
+    return {
+        "id": "user_001",
+        "name": "Administrator BPKH",
+        "role": "admin",
+        "bidang": "Administrasi"
+    }
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
