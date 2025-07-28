@@ -1,192 +1,173 @@
+# frontend/pages/1_🏠_Dashboard.py - Fixed version
 import streamlit as st
+import requests
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from utils.api_client import APIClient
-from components.auth import AuthComponent
-from config.settings import settings
+from datetime import datetime
 
-# Page config
-st.set_page_config(
-    page_title="Dashboard - RKAT BPKH",
-    page_icon="🏠",
-    layout="wide"
-)
+# Configuration
+BACKEND_URL = "https://rkat-bpkh-agenticai.onrender.com"
 
-# Initialize API client
-api_client = APIClient(settings.API_BASE_URL)
-auth = AuthComponent(api_client)
-
-# Check authentication
-if not auth.is_authenticated():
-    st.title("🏛️ RKAT BPKH Management System")
-    st.subheader("Selamat datang di Sistem Manajemen Rencana Kerja dan Anggaran Tahunan BPKH")
+def get_auth_headers():
+    """Get authorization headers with safe session state access"""
+    # Fix: Handle multiple possible token keys
+    token = (st.session_state.get('token') or 
+             st.session_state.get('auth_token') or 
+             st.session_state.get('access_token'))
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        auth.login_form()
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+def make_api_request(method, endpoint, **kwargs):
+    """API request wrapper"""
+    try:
+        url = f"{BACKEND_URL}{endpoint}"
+        kwargs['timeout'] = 30
+        
+        if method.upper() == "GET":
+            response = requests.get(url, **kwargs)
+        elif method.upper() == "POST":
+            response = requests.post(url, **kwargs)
+        
+        return response
+    except Exception as e:
+        st.error(f"API Error: {e}")
+        return None
+
+def main():
+    st.title("📊 Dashboard RKAT BPKH")
     
-    st.stop()
-
-# Set API token
-api_client.set_auth_token(st.session_state.auth_token)
-
-# Main Dashboard
-st.title("🏠 Dashboard RKAT BPKH")
-
-# User info header
-user_info = auth.get_user_info()
-col1, col2, col3 = st.columns([2, 1, 1])
-
-with col1:
-    st.write(f"**Selamat datang, {user_info.get('full_name', 'User')}**")
-    st.write(f"Role: {settings.USER_ROLES.get(user_info.get('role', ''), 'Unknown')}")
-
-with col3:
-    if st.button("Logout"):
-        auth.logout()
-
-# Get dashboard metrics
-with st.spinner("Memuat data dashboard..."):
-    response = api_client.get_dashboard_metrics()
+    # Check authentication with safe access
+    if not st.session_state.get('authenticated', False):
+        st.error("❌ Anda belum login. Silahkan login terlebih dahulu.")
+        st.info("👈 Klik halaman utama untuk login")
+        return
     
-    if response["success"]:
-        metrics = response["data"]
+    # Debug info
+    with st.expander("🔧 Debug Session State"):
+        st.write("Session State Keys:", list(st.session_state.keys()))
+        st.write("Authenticated:", st.session_state.get('authenticated'))
+        st.write("Has token:", bool(st.session_state.get('token')))
+        st.write("Has auth_token:", bool(st.session_state.get('auth_token')))
+        st.write("User:", st.session_state.get('user', {}).get('name', 'Not found'))
+    
+    try:
+        # FIXED: Safe session state access - line yang error sebelumnya
+        headers = get_auth_headers()
         
-        # Key Metrics Cards
-        st.subheader("📊 Metrics Utama")
+        if not headers:
+            st.error("❌ Token tidak ditemukan. Silahkan login ulang.")
+            if st.button("🔄 Refresh Page"):
+                st.rerun()
+            return
         
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            total_rkats = metrics["performance_metrics"]["total_rkats"]
-            st.metric("Total RKAT", total_rkats, delta=None)
-        
-        with col2:
-            approved_rkats = metrics["performance_metrics"]["approved_rkats"]
-            st.metric("RKAT Disetujui", approved_rkats, delta=None)
-        
-        with col3:
-            total_budget = metrics["budget_summary"]["total_budget"]
-            st.metric("Total Anggaran", f"Rp {total_budget/1e9:.1f}M", delta=None)
-        
-        with col4:
-            avg_approval_time = metrics["performance_metrics"]["avg_approval_time_days"]
-            st.metric("Rata-rata Waktu Approval", f"{avg_approval_time:.1f} hari", delta=None)
-        
-        # Charts Section
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📈 Distribusi Status RKAT")
+        with st.spinner("Loading dashboard data..."):
+            response = make_api_request("GET", "/dashboard/metrics", headers=headers)
             
-            status_data = metrics["status_distribution"]
-            if status_data:
-                # Translate status to Indonesian
-                status_labels = {k: settings.RKAT_STATUS.get(k, k) for k in status_data.keys()}
+            if response and response.status_code == 200:
+                metrics = response.json()
                 
-                fig = px.pie(
-                    values=list(status_data.values()),
-                    names=[status_labels[k] for k in status_data.keys()],
-                    title="Status RKAT",
-                    color_discrete_sequence=px.colors.qualitative.Set3
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                # Display metrics
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        label="Total RKAT",
+                        value=metrics.get('total_rkat', 0)
+                    )
+                
+                with col2:
+                    st.metric(
+                        label="RKAT Disetujui", 
+                        value=metrics.get('approved_rkat', 0)
+                    )
+                
+                with col3:
+                    budget = metrics.get('total_budget', 0)
+                    st.metric(
+                        label="Total Anggaran",
+                        value=f"Rp {budget/1000000000:.1f}B"
+                    )
+                
+                with col4:
+                    avg_days = metrics.get('avg_approval_days', 0)
+                    st.metric(
+                        label="Rata-rata Approval",
+                        value=f"{avg_days:.1f} hari"
+                    )
+                
+                # Status distribution chart
+                st.subheader("📈 Distribusi Status RKAT")
+                
+                status_dist = metrics.get('status_distribution', {})
+                if status_dist:
+                    # Convert to DataFrame for visualization
+                    df = pd.DataFrame(
+                        list(status_dist.items()), 
+                        columns=['Status', 'Count']
+                    )
+                    
+                    # Filter non-zero counts
+                    df = df[df['Count'] > 0]
+                    
+                    if not df.empty:
+                        st.bar_chart(df.set_index('Status'))
+                        
+                        # Show table as well
+                        st.subheader("📋 Detail Status")
+                        st.dataframe(df, use_container_width=True)
+                    else:
+                        st.info("📝 Belum ada data RKAT")
+                else:
+                    st.info("📊 Data status belum tersedia")
+                
+                # Success message
+                st.success("✅ Dashboard data loaded successfully!")
+                
+            elif response and response.status_code == 401:
+                st.error("❌ Token expired. Please login again.")
+                # Clear session state
+                for key in ['authenticated', 'token', 'auth_token', 'user']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+                
             else:
-                st.info("Tidak ada data RKAT")
-        
-        with col2:
-            st.subheader("💰 Breakdown Anggaran")
-            
-            budget_data = metrics["budget_summary"]
-            budget_df = pd.DataFrame({
-                'Kategori': ['Operasional', 'Personel'],
-                'Anggaran': [budget_data["operational_budget"], budget_data["personnel_budget"]]
-            })
-            
-            if budget_df['Anggaran'].sum() > 0:
-                fig = px.bar(
-                    budget_df, 
-                    x='Kategori', 
-                    y='Anggaran',
-                    title="Distribusi Anggaran",
-                    color='Kategori',
-                    color_discrete_sequence=['#1f77b4', '#ff7f0e']
-                )
-                fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Tidak ada data anggaran")
-        
-        # Compliance Scores
-        st.subheader("✅ Skor Kepatuhan Rata-rata")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            kup_score = budget_data["avg_kup_compliance"]
-            st.metric("Kepatuhan KUP", f"{kup_score:.1f}%")
-            st.progress(kup_score / 100)
-        
-        with col2:
-            sbo_score = budget_data["avg_sbo_compliance"] 
-            st.metric("Kepatuhan SBO", f"{sbo_score:.1f}%")
-            st.progress(sbo_score / 100)
-        
-        # Recent Activities
-        st.subheader("🕒 Aktivitas Terbaru")
-        
-        recent_activities = metrics["recent_activities"]
-        if recent_activities:
-            activity_df = pd.DataFrame(recent_activities)
-            activity_df['created_at'] = pd.to_datetime(activity_df['created_at'])
-            activity_df['Status'] = activity_df['status'].map(settings.RKAT_STATUS)
-            
-            st.dataframe(
-                activity_df[['title', 'Status', 'creator', 'created_at']],
-                column_config={
-                    'title': st.column_config.TextColumn('Judul RKAT'),
-                    'Status': st.column_config.TextColumn('Status'),
-                    'creator': st.column_config.TextColumn('Pembuat'),
-                    'created_at': st.column_config.DatetimeColumn('Tanggal Dibuat')
-                },
-                use_container_width=True
-            )
-        else:
-            st.info("Tidak ada aktivitas terbaru")
+                st.error("❌ Gagal memuat data dashboard")
+                if response:
+                    st.code(f"Status: {response.status_code}")
+                    st.code(f"Response: {response.text}")
+                
+                # Show mock data as fallback
+                show_mock_dashboard()
+                
+    except Exception as e:
+        st.error(f"❌ Error loading dashboard: {str(e)}")
+        st.info("Menampilkan data mock untuk demo...")
+        show_mock_dashboard()
+
+def show_mock_dashboard():
+    """Show mock dashboard data as fallback"""
+    st.info("📊 Menampilkan data mock untuk demo")
     
-    else:
-        st.error(f"Gagal memuat data dashboard: {response.get('error', 'Unknown error')}")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total RKAT", 24)
+    with col2:
+        st.metric("RKAT Disetujui", 14)
+    with col3:
+        st.metric("Total Anggaran", "Rp 25.0B")
+    with col4:
+        st.metric("Rata-rata Approval", "5.8 hari")
+    
+    # Mock chart data
+    mock_data = pd.DataFrame({
+        'Status': ['Draft', 'Pending Review', 'Approved'],
+        'Count': [5, 8, 11]
+    })
+    
+    st.bar_chart(mock_data.set_index('Status'))
 
-# Quick Actions based on role
-st.subheader("⚡ Aksi Cepat")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if auth.can_create_rkat():
-        if st.button("📝 Buat RKAT Baru", use_container_width=True):
-            st.switch_page("pages/2_📊_RKAT_Management.py")
-
-with col2:
-    if auth.can_review_rkat():
-        if st.button("👀 Review RKAT", use_container_width=True):
-            st.switch_page("pages/3_🔄_Workflow.py")
-
-with col3:
-    if st.button("💡 AI Assistant", use_container_width=True):
-        st.switch_page("pages/4_💡_AI_Assistant.py")
-
-# Footer
-st.markdown("---")
-st.markdown(
-    """
-    <div style='text-align: center; color: gray;'>
-        RKAT BPKH Management System v1.0 | 
-        Badan Pengelola Keuangan Haji | 
-        © 2025
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+if __name__ == "__main__":
+    main()
