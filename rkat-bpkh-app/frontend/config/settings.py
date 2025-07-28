@@ -1,55 +1,75 @@
+# frontend/config/settings.py
 import os
-from typing import Dict, Any
 
 class Settings:
-    # API Configuration
-    API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+    # Backend URL - UPDATE INI!
+    API_BASE_URL = "https://rkat-bpkh-agenticai.onrender.com"
     
-    # Application Configuration
-    APP_TITLE = "RKAT BPKH Management System"
-    APP_ICON = "🏛️"
-    LAYOUT = "wide"
-    
-    # UI Configuration
-    SIDEBAR_DEFAULT_EXPANDED = True
-    
-    # File Upload Configuration
-    MAX_FILE_SIZE_MB = 50
-    ALLOWED_FILE_TYPES = ['pdf', 'doc', 'docx', 'xls', 'xlsx']
-    
-    # User Roles
-    USER_ROLES = {
-        "badan_pelaksana": "Badan Pelaksana",
-        "audit_internal": "Audit Internal", 
-        "komite_dewan_pengawas": "Komite Dewan Pengawas",
-        "dewan_pengawas": "Dewan Pengawas",
-        "administrator": "Administrator"
-    }
-    
-    # RKAT Status
+    # RKAT Status mapping
     RKAT_STATUS = {
         "draft": "Draft",
-        "submitted": "Disubmit",
+        "submitted": "Diajukan",
         "under_audit_review": "Review Audit Internal",
         "audit_approved": "Disetujui Audit",
-        "audit_rejected": "Ditolak Audit",
-        "under_committee_review": "Review Komite",
-        "committee_approved": "Disetujui Komite", 
-        "committee_rejected": "Ditolak Komite",
-        "under_board_review": "Review Dewan Pengawas",
-        "board_approved": "Disetujui Dewan",
-        "board_rejected": "Ditolak Dewan",
-        "final_approved": "Final Approved"
+        "committee_review": "Review Komite Dewan",
+        "committee_approved": "Disetujui Komite",
+        "board_review": "Review Dewan Pengawas",
+        "final_approved": "Disetujui Final",
+        "rejected": "Ditolak"
     }
     
-    # Colors
-    COLORS = {
-        "primary": "#1f77b4",
-        "secondary": "#ff7f0e", 
-        "success": "#2ca02c",
-        "warning": "#ff7f0e",
-        "danger": "#d62728",
-        "info": "#17a2b8"
+    # User roles and permissions
+    USER_ROLES = {
+        "administrator": {
+            "can_create_rkat": True,
+            "can_edit_rkat": True,
+            "can_approve_rkat": True,
+            "can_view_all": True
+        },
+        "badan_pelaksana": {
+            "can_create_rkat": True,
+            "can_edit_rkat": True,
+            "can_approve_rkat": False,
+            "can_view_all": False
+        },
+        "audit_internal": {
+            "can_create_rkat": False,
+            "can_edit_rkat": False,
+            "can_approve_rkat": True,
+            "can_view_all": True
+        },
+        "komite_dewan_pengawas": {
+            "can_create_rkat": False,
+            "can_edit_rkat": False,
+            "can_approve_rkat": True,
+            "can_view_all": True
+        },
+        "dewan_pengawas": {
+            "can_create_rkat": False,
+            "can_edit_rkat": False,
+            "can_approve_rkat": True,
+            "can_view_all": True
+        }
+    }
+    
+    # App configuration
+    PAGE_TITLE = "RKAT BPKH Management System"
+    PAGE_ICON = "🏛️"
+    
+    # Environment-specific settings
+    DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+    
+    # API timeout settings
+    API_TIMEOUT = 30
+    
+    # Login credentials for demo (remove in production)
+    DEMO_CREDENTIALS = {
+        "admin": "admin123",
+        "badan_pelaksana": "bp123",
+        "audit_internal": "audit123",
+        "komite_dewan": "komite123",
+        "dewan_pengawas": "dewan123"
     }
 
+# Create settings instance
 settings = Settings()
