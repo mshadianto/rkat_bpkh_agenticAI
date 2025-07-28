@@ -76,28 +76,42 @@ RKAT_DATA = [
     }
 ]
 
-# Basic Routes
-@app.get("/")
-async def root():
-    return {"message": "RKAT BPKH Minimal Backend", "status": "active", "version": "1.0"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "message": "Minimal backend ready!"}
-
-@app.get("/test")
-async def test():
+# Analytics
+@app.get("/api/analytics/dashboard-metrics")
+async def dashboard_metrics():
     return {
-        "message": "All endpoints working!",
-        "endpoints": [
-            "GET / - Root",
-            "GET /health - Health check",
-            "POST /api/auth/login - Login",
-            "GET /api/rkat/list - RKAT list",
-            "GET /api/rkat/{id} - RKAT detail"
-        ]
+        "status_distribution": {
+            "draft": 5,
+            "submitted": 3,
+            "under_audit_review": 2,
+            "audit_approved": 4,
+            "committee_approved": 2,
+            "final_approved": 8
+        },
+        "budget_summary": {
+            "total_budget": 25000000000.0,
+            "operational_budget": 17500000000.0,
+            "personnel_budget": 7500000000.0,
+            "avg_kup_compliance": 89.3,
+            "avg_sbo_compliance": 91.8
+        },
+        "recent_activities": [
+            {
+                "id": 1,
+                "title": "RKAT BPKH 2026",
+                "status": "draft",
+                "created_at": "2025-01-15T10:00:00",
+                "creator": "Badan Pelaksana"
+            }
+        ],
+        "performance_metrics": {
+            "avg_approval_time_days": 5.8,
+            "total_rkats": 24,
+            "approved_rkats": 14,
+            "pending_rkats": 6,
+            "rejected_rkats": 4
+        }
     }
-
 # Auth
 @app.post("/api/auth/login")
 async def login(credentials: LoginRequest):
