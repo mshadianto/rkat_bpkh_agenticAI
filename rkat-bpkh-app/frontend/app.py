@@ -1,146 +1,149 @@
+# app.py - Streamlit Frontend yang diperbaiki
 import streamlit as st
-from config.settings import settings
+import requests
+import pandas as pd
+from datetime import datetime
+import plotly.express as px
 
-# Configure the page
-st.set_page_config(
-    page_title=settings.APP_TITLE,
-    page_icon=settings.APP_ICON,
-    layout=settings.LAYOUT,
-    initial_sidebar_state="expanded" if settings.SIDEBAR_DEFAULT_EXPANDED else "collapsed"
-)
+# Configuration
+API_BASE_URL = "http://localhost:8000"  # Update sesuai deployment
 
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    .main > div {
-        padding-top: 2rem;
-    }
+def main():
+    st.set_page_config(
+        page_title="RKAT BPKH",
+        page_icon="🏛️",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    .stMetric {
-        background-color: #f0f2f6;
-        border: 1px solid #e0e0e0;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
+    # Authentication
+    if 'user' not in st.session_state:
+        login_page()
+    else:
+        main_app()
+
+def login_page():
+    st.title("🏛️ Sistem RKAT BPKH")
+    st.subheader("Login ke Sistem")
     
-    .stAlert {
-        margin: 1rem 0;
-    }
-    
-    .rkat-card {
-        background-color: white;
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        border: 1px solid #e0e0e0;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .status-badge {
-        padding: 0.25rem 0.5rem;
-        border-radius: 0.25rem;
-        font-size: 0.75rem;
-        font-weight: bold;
-        text-transform: uppercase;
-    }
-    
-    .status-draft {
-        background-color: #ffeaa7;
-        color: #2d3436;
-    }
-    
-    .status-submitted {
-        background-color: #74b9ff;
-        color: white;
-    }
-    
-    .status-approved {
-        background-color: #00b894;
-        color: white;
-    }
-    
-    .status-rejected {
-        background-color: #e17055;
-        color: white;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Main welcome page
-st.title(f"{settings.APP_ICON} {settings.APP_TITLE}")
-
-st.markdown("""
-### Selamat datang di Sistem Manajemen RKAT BPKH
-
-Sistem komprehensif untuk mengelola Rencana Kerja dan Anggaran Tahunan (RKAT) 
-Badan Pengelola Keuangan Haji dengan fitur:
-
-- 📊 **Dashboard Analytics** - Monitoring dan analisis RKAT
-- 📝 **RKAT Management** - Penyusunan dan pengelolaan RKAT
-- 🔄 **Workflow System** - Proses approval multi-stage
-- 💡 **AI Assistant** - Bantuan AI untuk optimasi dan compliance
-- 📈 **Advanced Analytics** - Laporan dan insights mendalam
-- ⚙️ **Settings & Admin** - Konfigurasi sistem
-
-### Fitur Utama:
-
-**🎯 Compliance Check**
-- Validasi KUP (Kebijakan Umum Penganggaran)
-- Validasi SBO (Standar Biaya Operasional) 
-- Auto-calculation sesuai standar BPKH
-
-**🤖 AI-Powered Features**
-- Scenario planning dan budget analysis
-- Smart compliance recommendations
-- Natural language query untuk data RKAT
-- Document analysis dan validation
-
-**📋 Workflow Management**
-- Multi-stage approval process
-- Real-time status tracking
-- Automated notifications
-- Audit trail lengkap
-
-### Workflow RKAT BPKH:
-
-```
-Badan Pelaksana → Audit Internal → Komite Dewan Pengawas → Dewan Pengawas → DPR RI
-    (Penyusun)      (Review)         (Review)               (Approval)     (Final)
-```
-
----
-
-**Mulai dengan login atau navigasi ke halaman yang diinginkan menggunakan sidebar.**
-""")
-
-# Quick stats (if available)
-if 'auth_token' in st.session_state:
-    st.markdown("### 📊 Quick Stats")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total RKAT", "12", delta="2")
+    col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.metric("Pending Review", "3", delta="-1")
-    
-    with col3:
-        st.metric("Approved", "8", delta="1")
-    
-    with col4:
-        st.metric("Total Budget", "Rp 15.2M", delta="5%")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        
+        if st.button("Login", use_container_width=True):
+            try:
+                response = requests.post(f"{API_BASE_URL}/auth/login", 
+                                       json={"username": username, "password": password})
+                if response.status_code == 200:
+                    st.session_state['user'] = response.json()['user']
+                    st.session_state['token'] = response.json()['access_token']
+                    st.rerun()
+                else:
+                    st.error("Username atau password salah")
+            except:
+                st.error("Tidak dapat terhubung ke server")
 
-# Footer
-st.markdown("---")
-st.markdown(
-    f"""
-    <div style='text-align: center; color: gray; padding: 2rem;'>
-        {settings.APP_TITLE} v1.0 | 
-        Powered by MS Hadianto AI & Modern Technology | 
-        © 2025 Badan Pengelola Keuangan Haji
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+def main_app():
+    # Sidebar Navigation
+    with st.sidebar:
+        st.image("https://via.placeholder.com/200x80/1f77b4/white?text=BPKH", width=200)
+        st.write(f"**{st.session_state['user']['name']}**")
+        st.write(f"Role: {st.session_state['user']['role']}")
+        
+        pages = {
+            "📊 Dashboard": "dashboard",
+            "📋 RKAT Management": "rkat", 
+            "🔄 Workflow": "workflow",
+            "🤖 AI Assistant": "ai"
+        }
+        
+        selected = st.radio("Navigation", list(pages.keys()))
+        page = pages[selected]
+        
+        if st.button("Logout"):
+            del st.session_state['user']
+            st.rerun()
+    
+    # Main Content
+    if page == "dashboard":
+        dashboard_page()
+    elif page == "rkat":
+        rkat_management_page()
+    elif page == "workflow":
+        workflow_page()
+    elif page == "ai":
+        ai_assistant_page()
+
+def dashboard_page():
+    st.title("📊 Dashboard RKAT BPKH")
+    
+    # Get metrics from API
+    try:
+        headers = {"Authorization": f"Bearer {st.session_state['token']}"}
+        response = requests.get(f"{API_BASE_URL}/dashboard/metrics", headers=headers)
+        metrics = response.json()
+        
+        # Display metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total RKAT", metrics['total_rkat'])
+        with col2:
+            st.metric("RKAT Disetujui", metrics['approved_rkat'])
+        with col3:
+            st.metric("Total Anggaran", f"Rp {metrics['total_budget']/1000000:.1f}M")
+        with col4:
+            st.metric("Rata-rata Approval", f"{metrics['avg_approval_days']:.1f} hari")
+        
+        # Status distribution chart
+        st.subheader("Distribusi Status RKAT")
+        status_df = pd.DataFrame(list(metrics['status_distribution'].items()), 
+                               columns=['Status', 'Count'])
+        fig = px.pie(status_df, values='Count', names='Status')
+        st.plotly_chart(fig, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error loading dashboard: {e}")
+
+def rkat_management_page():
+    st.title("📋 Manajemen RKAT")
+    
+    # RKAT List
+    try:
+        headers = {"Authorization": f"Bearer {st.session_state['token']}"}
+        response = requests.get(f"{API_BASE_URL}/rkat/", headers=headers)
+        rkat_list = response.json()
+        
+        if rkat_list:
+            df = pd.DataFrame(rkat_list)
+            st.dataframe(df[['id', 'judul', 'bidang', 'status', 'total_anggaran', 'progress_percentage']], 
+                        use_container_width=True)
+        else:
+            st.info("Belum ada RKAT yang dibuat")
+            
+    except Exception as e:
+        st.error(f"Error loading RKAT: {e}")
+
+def workflow_page():
+    st.title("🔄 Workflow RKAT")
+    
+    # Show workflow steps
+    steps = [
+        {"step": 1, "title": "Pengajuan RKAT", "desc": "Bidang mengajukan RKAT sesuai KUP & SBO"},
+        {"step": 2, "title": "Review Audit Internal", "desc": "Audit Internal melakukan review kelayakan"},
+        {"step": 3, "title": "Review Komite Dewan", "desc": "Komite Dewan Pengawas melakukan evaluasi"},
+        {"step": 4, "title": "Persetujuan Dewan", "desc": "Dewan Pengawas memberikan persetujuan final"}
+    ]
+    
+    for step in steps:
+        with st.expander(f"Step {step['step']}: {step['title']}"):
+            st.write(step['desc'])
+
+def ai_assistant_page():
+    st.title("🤖 AI Assistant RKAT")
+    st.info("Fitur AI Assistant untuk membantu penyusunan RKAT akan segera hadir")
+
+if __name__ == "__main__":
+    main()
