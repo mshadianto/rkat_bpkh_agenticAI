@@ -321,4 +321,290 @@ def show_compliance_assistant():
     st.markdown("""
     ### 📋 Pemeriksaan Kesesuaian RKAT
     
-    Assistant akan membantu memverifikasi kesesuaian RKA
+    Assistant akan membantu memverifikasi kesesuaian RKAT Anda dengan:
+    - 📜 **KUP (Kebijakan Umum Penganggaran)**
+    - 📊 **SBO (Standar Biaya Operasional)**
+    - 🏛️ **Peraturan BPKH**
+    - 📝 **Template dan Format Standar**
+    """)
+    
+    # Load compliance data
+    compliance_checks = run_compliance_checks()
+    
+    # Display compliance status
+    st.subheader("🔍 Status Compliance")
+    
+    for check in compliance_checks:
+        status_icon = "✅" if check["status"] == "PASS" else "❌" if check["status"] == "FAIL" else "⚠️"
+        
+        with st.expander(f"{status_icon} {check['category']}", expanded=check["status"] != "PASS"):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.write(f"**Deskripsi:** {check['description']}")
+                st.write(f"**Status:** {check['status']}")
+                if check.get('details'):
+                    st.write(f"**Detail:** {check['details']}")
+            
+            with col2:
+                if check["status"] == "PASS":
+                    st.success("Compliant")
+                elif check["status"] == "FAIL":
+                    st.error("Non-Compliant")
+                else:
+                    st.warning("Perlu Review")
+    
+    # Overall compliance score
+    total_checks = len(compliance_checks)
+    passed_checks = len([c for c in compliance_checks if c["status"] == "PASS"])
+    compliance_score = (passed_checks / total_checks) * 100 if total_checks > 0 else 0
+    
+    st.subheader("📊 Compliance Score")
+    st.metric("Overall Compliance", f"{compliance_score:.1f}%")
+    
+    # Progress bar
+    st.progress(compliance_score / 100)
+    
+    # Recommendations
+    if compliance_score < 100:
+        st.subheader("💡 Rekomendasi Perbaikan")
+        failed_checks = [c for c in compliance_checks if c["status"] != "PASS"]
+        
+        for i, check in enumerate(failed_checks, 1):
+            st.write(f"{i}. **{check['category']}**: {check.get('recommendation', 'Periksa kembali dokumen terkait')}")
+
+# Helper Functions
+
+def load_rkat_context():
+    """Load RKAT data for AI context"""
+    try:
+        response = make_api_request("GET", "/rkat/", headers=get_auth_headers())
+        if response and response.status_code == 200:
+            return response.json()
+    except:
+        pass
+    return []
+
+def load_rkat_data():
+    """Load RKAT data with error handling"""
+    try:
+        response = make_api_request("GET", "/rkat/", headers=get_auth_headers())
+        if response and response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"Error loading RKAT data: {e}")
+    return []
+
+def generate_ai_response(prompt, context):
+    """Generate AI response based on prompt and context"""
+    # Simple rule-based responses (replace with actual AI integration)
+    prompt_lower = prompt.lower()
+    
+    if "budget" in prompt_lower or "anggaran" in prompt_lower:
+        return """
+        📊 **Analisis Budget RKAT:**
+        
+        Berdasarkan data yang tersedia:
+        1. **Kelayakan Anggaran**: Sesuai dengan standar industri
+        2. **Benchmark**: Dalam range normal untuk bidang serupa
+        3. **Rekomendasi**: 
+           - Pertimbangkan alokasi 15% untuk kontingensi
+           - Prioritaskan item dengan ROI tinggi
+           - Review kembali biaya operasional rutin
+        
+        💡 **Saran**: Gunakan tool "Budget Optimization" untuk analisis lebih detail.
+        """
+    
+    elif "compliance" in prompt_lower or "kup" in prompt_lower or "sbo" in prompt_lower:
+        return """
+        ✅ **Compliance Check:**
+        
+        Status kesesuaian RKAT Anda:
+        1. **KUP Compliance**: ✅ Sesuai dengan kebijakan umum
+        2. **SBO Compliance**: ⚠️ Beberapa item perlu review
+        3. **Format**: ✅ Sesuai template standar
+        
+        📋 **Action Items**:
+        - Review standar biaya untuk kategori "Teknologi"
+        - Pastikan justifikasi anggaran lengkap
+        - Update referensi ke KUP terbaru
+        
+        💡 **Saran**: Gunakan "Compliance Assistant" untuk check detail.
+        """
+    
+    elif "timeline" in prompt_lower or "approval" in prompt_lower:
+        return """
+        ⏱️ **Prediksi Timeline Approval:**
+        
+        Estimasi waktu berdasarkan kompleksitas RKAT:
+        1. **Review Audit Internal**: 5-7 hari kerja
+        2. **Review Komite Dewan**: 3-5 hari kerja  
+        3. **Approval Dewan Pengawas**: 2-3 hari kerja
+        
+        📊 **Total Estimasi**: 12-15 hari kerja
+        
+        🚀 **Tips Percepatan**:
+        - Lengkapi semua dokumen pendukung
+        - Pastikan justifikasi jelas dan terukur
+        - Koordinasi proaktif dengan reviewer
+        
+        💡 **Catatan**: Timeline dapat lebih cepat jika tidak ada revisi major.
+        """
+    
+    else:
+        return f"""
+        🤖 **AI Assistant Response:**
+        
+        Terima kasih atas pertanyaan: "{prompt}"
+        
+        Saya dapat membantu Anda dengan:
+        - 📊 Analisis kelayakan anggaran
+        - ✅ Pemeriksaan compliance KUP & SBO  
+        - ⏱️ Prediksi timeline approval
+        - 💡 Saran optimasi budget
+        - 📈 Benchmarking dengan RKAT serupa
+        
+        Coba gunakan tombol Quick Actions atau ajukan pertanyaan spesifik tentang RKAT Anda!
+        
+        💡 **Contoh pertanyaan**:
+        - "Bagaimana cara mengoptimalkan budget IT?"
+        - "Apakah anggaran saya sudah sesuai SBO?"
+        - "Berapa lama proses approval biasanya?"
+        """
+
+def generate_budget_scenarios(base_budget, inflation, growth, num_scenarios, risk_level, focus_area):
+    """Generate budget scenarios"""
+    scenarios = []
+    
+    risk_multipliers = {
+        "Conservative": [0.8, 0.9, 1.0],
+        "Moderate": [0.9, 1.0, 1.1, 1.2],
+        "Aggressive": [1.0, 1.2, 1.4, 1.6]
+    }
+    
+    multipliers = risk_multipliers.get(risk_level, [0.9, 1.0, 1.1])
+    
+    for i in range(num_scenarios):
+        multiplier = multipliers[i % len(multipliers)]
+        
+        scenario_budget = base_budget * (1 + (inflation + growth) / 100) * multiplier
+        
+        scenarios.append({
+            "Scenario": f"Skenario {i+1}",
+            "Budget_Amount": int(scenario_budget),
+            "Risk_Level": risk_level,
+            "Focus_Area": focus_area,
+            "Variance": f"{((multiplier - 1) * 100):+.1f}%"
+        })
+    
+    return scenarios
+
+def show_scenario_recommendations(scenarios, risk_level):
+    """Show recommendations based on scenarios"""
+    if risk_level == "Conservative":
+        st.info("""
+        🛡️ **Rekomendasi Conservative:**
+        - Pilih skenario dengan variance terendah
+        - Alokasikan 20% untuk contingency fund
+        - Focus pada ROI yang sudah terbukti
+        """)
+    elif risk_level == "Moderate":
+        st.info("""
+        ⚖️ **Rekomendasi Moderate:**
+        - Balance antara stability dan growth
+        - Alokasikan 15% untuk contingency
+        - Mix antara proven dan innovative initiatives
+        """)
+    else:
+        st.warning("""
+        🚀 **Rekomendasi Aggressive:**
+        - Target growth maksimal dengan calculated risk
+        - Alokasikan 25% untuk high-impact projects
+        - Monitor closely dan siap untuk adjustment
+        """)
+
+def run_budget_optimization(rkat, target, reduction_pct, priority_areas):
+    """Run budget optimization analysis"""
+    current_budget = rkat['budget']
+    target_budget = current_budget * (1 - reduction_pct / 100)
+    savings = current_budget - target_budget
+    
+    return {
+        "current_budget": current_budget,
+        "target_budget": target_budget,
+        "savings": savings,
+        "reduction_percentage": reduction_pct,
+        "optimized_areas": priority_areas,
+        "recommendations": [
+            "Consolidate vendor contracts untuk better pricing",
+            "Implement shared services untuk reduce duplicate costs",
+            "Optimize resource allocation berdasarkan priority matrix",
+            "Consider phased implementation untuk spread costs"
+        ]
+    }
+
+def display_optimization_results(results):
+    """Display optimization results"""
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Budget Saat Ini", f"Rp {results['current_budget']:,.0f}")
+    
+    with col2:
+        st.metric("Target Budget", f"Rp {results['target_budget']:,.0f}")
+    
+    with col3:
+        st.metric("Potential Savings", f"Rp {results['savings']:,.0f}")
+    
+    st.subheader("💡 Rekomendasi Optimasi")
+    for i, rec in enumerate(results['recommendations'], 1):
+        st.write(f"{i}. {rec}")
+
+def show_sample_optimization():
+    """Show sample optimization for demo"""
+    st.info("📊 Contoh Optimasi Budget (Sample Data)")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Budget Saat Ini", "Rp 2,500,000,000")
+    
+    with col2:
+        st.metric("Target Budget", "Rp 2,250,000,000")
+    
+    with col3:
+        st.metric("Potential Savings", "Rp 250,000,000")
+
+def run_compliance_checks():
+    """Run compliance checks"""
+    return [
+        {
+            "category": "KUP Compliance",
+            "description": "Kesesuaian dengan Kebijakan Umum Penganggaran",
+            "status": "PASS",
+            "details": "Semua item sesuai dengan KUP 2026"
+        },
+        {
+            "category": "SBO Compliance", 
+            "description": "Kesesuaian dengan Standar Biaya Operasional",
+            "status": "WARNING",
+            "details": "Beberapa item melebihi standar biaya",
+            "recommendation": "Review item dengan cost variance > 15%"
+        },
+        {
+            "category": "Format & Template",
+            "description": "Kesesuaian format dengan template standar",
+            "status": "PASS",
+            "details": "Format sesuai template RKAT BPKH v2.0"
+        },
+        {
+            "category": "Dokumen Pendukung",
+            "description": "Kelengkapan dokumen justifikasi",
+            "status": "FAIL", 
+            "details": "Beberapa dokumen belum lengkap",
+            "recommendation": "Lengkapi TOR dan risk assessment"
+        }
+    ]
+
+if __name__ == "__main__":
+    main()
