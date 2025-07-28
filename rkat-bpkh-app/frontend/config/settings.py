@@ -53,8 +53,10 @@ class Settings:
     }
     
     # App configuration
+    APP_TITLE = "RKAT BPKH Management System"
     PAGE_TITLE = "RKAT BPKH Management System"
     PAGE_ICON = "🏛️"
+    APP_ICON = "🏛️"
     
     # Environment-specific settings
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
